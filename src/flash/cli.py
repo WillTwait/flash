@@ -9,20 +9,23 @@ import typer
 from flash.core import (
     FlashError,
     checkout_branch,
+    cherry_pick_to_worktree,
+    clean_working_tree,
     create_and_checkout_temp_branch,
     delete_branch,
     ensure_git_exclude,
     fzf_pick_worktree,
     get_canonical_root,
+    get_commits_since,
     get_current_branch,
     get_head_sha,
-    has_changes_against,
     is_dirty,
     list_worktrees,
     pop_stash_by_sha,
     resolve_worktree,
     stash_changes,
-    sync_changes_to_dir,
+    stash_create,
+    sync_changes,
 )
 from flash.state import FlashState, clear_state, now_iso, read_state, write_state
 
@@ -42,6 +45,53 @@ def _ok(msg: str) -> None:
 
 def _info(msg: str) -> None:
     typer.secho(msg, fg=typer.colors.YELLOW)
+
+
+def _apply_to_worktree(state: FlashState, canonical_root: str) -> None:
+    """Cherry-pick commits and sync unstaged files to the worktree.
+
+    Strategy:
+    1. Safety backup: `git stash create` in worktree (read-only)
+    2. Clean the worktree so cherry-pick can't conflict
+    3. Cherry-pick new commits onto clean worktree
+    4. Copy uncommitted files from canonical → worktree
+    5. Update state so next apply only picks new commits
+    """
+
+    commits = get_commits_since(state.flash_base_sha, cwd=canonical_root)
+    has_uncommitted = is_dirty(cwd=canonical_root)
+
+    if not commits and not has_uncommitted:
+        _info("No changes to apply.")
+        return
+
+    # Safety backup of worktree state (read-only, no side effects)
+    safety_sha = stash_create(cwd=state.worktree_path)
+
+    try:
+        if commits:
+            # Clean worktree for conflict-free cherry-pick
+            clean_working_tree(cwd=state.worktree_path)
+            cherry_pick_to_worktree(commits, state.worktree_path)
+            _ok(f"Cherry-picked {len(commits)} commit(s) to worktree.")
+
+            # Update base SHA so next apply only picks new commits
+            new_base = get_head_sha(cwd=canonical_root)
+            state.flash_base_sha = new_base
+            write_state(state)
+
+        if has_uncommitted:
+            count = sync_changes("HEAD", canonical_root, state.worktree_path)
+            if count:
+                _ok(f"Synced {count} uncommitted file(s) to worktree.")
+
+    except FlashError:
+        if safety_sha:
+            _err(f"Worktree state backed up as stash {safety_sha}")
+            _err(
+                f"  Recover with: cd {state.worktree_path} && git stash apply {safety_sha}"
+            )
+        raise
 
 
 @app.command()
@@ -102,10 +152,15 @@ def into(
         _info(f"Creating temp branch '{temp_branch}' at {wt.head[:8]}...")
         create_and_checkout_temp_branch(temp_branch, wt.head, cwd=canonical_root)
 
+        # Copy uncommitted changes from worktree into canonical checkout
+        wt_changes = sync_changes("HEAD", wt.path, canonical_root)
+        if wt_changes:
+            _info(f"Copied {wt_changes} uncommitted file(s) from worktree.")
+
         # Ensure .flash/ is excluded from git
         ensure_git_exclude(canonical_root)
 
-        # Write state
+        # Write state — flash_base_sha is the worktree's HEAD (temp branch start)
         state = FlashState(
             original_branch=original_branch,
             flash_branch=wt.branch,
@@ -113,6 +168,7 @@ def into(
             worktree_path=wt.path,
             canonical_root=canonical_root,
             original_head_sha=original_head_sha,
+            flash_base_sha=wt.head,
             stash_sha=stash_sha,
             started_at=now_iso(),
         )
@@ -147,8 +203,10 @@ def out(
         raise typer.Exit(1)
 
     try:
-        # Check for changes made during flash
-        has_changes = has_changes_against(state.temp_branch, cwd=canonical_root)
+        # Check for any changes (commits or unstaged)
+        commits = get_commits_since(state.flash_base_sha, cwd=canonical_root)
+        has_unstaged = is_dirty(cwd=canonical_root)
+        has_changes = bool(commits) or has_unstaged
 
         if has_changes:
             if apply and discard:
@@ -158,7 +216,11 @@ def out(
             if not apply and not discard:
                 # Interactive: prompt user
                 if sys.stdin.isatty():
-                    _info("You have uncommitted changes.")
+                    _info("You have changes during this flash.")
+                    if commits:
+                        _info(f"  {len(commits)} commit(s)")
+                    if has_unstaged:
+                        _info("  Uncommitted file changes")
                     choice = (
                         typer.prompt(
                             "[a]pply to worktree / [d]iscard",
@@ -174,21 +236,11 @@ def out(
                     discard = True
 
             if apply:
-                _info("Applying changes to worktree...")
-                count = sync_changes_to_dir(
-                    state.temp_branch, canonical_root, state.worktree_path
-                )
-                if count:
-                    _ok(f"Synced {count} file(s) to {state.worktree_path}")
-                else:
-                    _info("No changes to apply.")
+                _apply_to_worktree(state, canonical_root)
 
         # Discard any local changes before switching branches
         if is_dirty(cwd=canonical_root):
-            from flash.core import run_git
-
-            run_git("checkout", ".", cwd=canonical_root)
-            run_git("clean", "-fd", cwd=canonical_root)
+            clean_working_tree(cwd=canonical_root)
 
         # Restore original branch
         _info(f"Checking out '{state.original_branch}'...")
@@ -240,9 +292,12 @@ def status() -> None:
         typer.echo(f"Stash SHA: {state.stash_sha}")
 
     # Show if there are current changes
-    has_changes = is_dirty(cwd=canonical_root)
-    if has_changes:
-        _info("Current working tree has modifications.")
+    commits = get_commits_since(state.flash_base_sha, cwd=canonical_root)
+    has_unstaged = is_dirty(cwd=canonical_root)
+    if commits:
+        _info(f"{len(commits)} new commit(s) since flash.")
+    if has_unstaged:
+        _info("Uncommitted file changes.")
 
 
 @app.command("apply")
@@ -260,15 +315,7 @@ def apply_changes() -> None:
         raise typer.Exit(1)
 
     try:
-        count = sync_changes_to_dir(
-            state.temp_branch, canonical_root, state.worktree_path
-        )
-        if not count:
-            _info("No changes to apply.")
-            raise typer.Exit(0)
-
-        _ok(f"Synced {count} file(s) to {state.worktree_path}")
-
+        _apply_to_worktree(state, canonical_root)
     except FlashError as e:
         _err(str(e))
         raise typer.Exit(1)

@@ -275,13 +275,11 @@ def has_changes_against(ref: str, cwd: str | Path | None = None) -> bool:
     return bool(get_changed_files(ref, cwd=cwd))
 
 
-def sync_changes_to_dir(
-    ref: str, canonical_root: str | Path, target_dir: str | Path
-) -> int:
-    """Copy changed files from canonical checkout to target directory.
+def sync_changes(ref: str, src_dir: str | Path, dst_dir: str | Path) -> int:
+    """Copy changed files from src_dir to dst_dir.
 
-    Compares working tree against ref to find changed files, then copies
-    each one to the target directory. This is more reliable than patching
+    Compares src_dir's working tree against ref to find changed files,
+    then copies each one to dst_dir. This is more reliable than patching
     because it handles repeated applies correctly — the target always gets
     the current state of each changed file.
 
@@ -289,28 +287,64 @@ def sync_changes_to_dir(
     """
     import shutil
 
-    canonical = Path(canonical_root)
-    target = Path(target_dir)
-    changed = get_changed_files(ref, cwd=canonical_root)
+    src = Path(src_dir)
+    dst = Path(dst_dir)
+    changed = get_changed_files(ref, cwd=src_dir)
 
     if not changed:
         return 0
 
     count = 0
     for filepath in changed:
-        src = canonical / filepath
-        dst = target / filepath
+        src_file = src / filepath
+        dst_file = dst / filepath
 
-        if src.exists():
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(str(src), str(dst))
+        if src_file.exists():
+            dst_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(src_file), str(dst_file))
             count += 1
-        elif dst.exists():
-            # File was deleted in canonical checkout
-            dst.unlink()
+        elif dst_file.exists():
+            # File was deleted in source
+            dst_file.unlink()
             count += 1
 
     return count
+
+
+def get_commits_since(base_sha: str, cwd: str | Path | None = None) -> list[str]:
+    """Get list of commit SHAs on current branch since base_sha (oldest first)."""
+    result = run_git("log", "--format=%H", "--reverse", f"{base_sha}..HEAD", cwd=cwd)
+    return [sha for sha in result.stdout.strip().splitlines() if sha.strip()]
+
+
+def stash_create(cwd: str | Path | None = None) -> str | None:
+    """Create a stash commit without modifying working tree or stash list.
+
+    This is a read-only safety backup. Returns the stash SHA, or None
+    if the working tree is clean.
+    """
+    result = run_git("stash", "create", cwd=cwd)
+    sha = result.stdout.strip()
+    return sha if sha else None
+
+
+def clean_working_tree(cwd: str | Path | None = None) -> None:
+    """Reset working tree to HEAD — discard all changes and untracked files."""
+    run_git("checkout", ".", cwd=cwd)
+    run_git("clean", "-fd", cwd=cwd)
+
+
+def cherry_pick_to_worktree(commits: list[str], worktree_path: str | Path) -> int:
+    """Cherry-pick commits onto a clean worktree. Returns count picked.
+
+    The worktree MUST be clean before calling this — the caller is
+    responsible for saving and restoring any uncommitted state.
+    """
+    if not commits:
+        return 0
+    for sha in commits:
+        run_git("cherry-pick", sha, cwd=worktree_path)
+    return len(commits)
 
 
 def ensure_git_exclude(canonical_root: str | Path) -> None:

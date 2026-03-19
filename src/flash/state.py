@@ -19,6 +19,7 @@ class FlashState:
     worktree_path: str
     canonical_root: str
     original_head_sha: str
+    flash_base_sha: str
     started_at: str
     stash_sha: str | None = None
 
