@@ -12,17 +12,6 @@ Your main checkout is where everything actually runs — dev server, database, p
 
 `flash` wraps that entire dance in a single command with a state file, so nothing gets lost.
 
-## How
-
-```bash
-flash into my-worktree    # stash + checkout worktree branch
-# test, poke around, make fixes
-flash apply                # sync fixes back to worktree
-flash out                  # restore original branch + pop stash
-```
-
-Everything is tracked in a state file so nothing gets lost.
-
 ## Install
 
 ```bash
@@ -32,48 +21,38 @@ uv tool install ~/Developer/flash    # from local clone
 
 ## Commands
 
-### `flash into [name]`
+| Command | Description |
+|---------|-------------|
+| `flash into [name]` | Switch to a worktree's branch (or open fzf picker) |
+| `flash out` | End flash, restore original branch + stash |
+| `flash out --apply` | End flash, sync changes to worktree first |
+| `flash out --discard` | End flash, throw away changes |
+| `flash apply` | Sync changes to worktree without ending flash |
+| `flash status` | Show current flash state |
 
-Switch to a worktree's branch on your canonical (non-worktree) checkout.
+## Workflow
 
-- Stashes uncommitted changes automatically
-- Creates a temp branch `flash/<branch>` so it doesn't conflict with the worktree
-- Pass a worktree name/branch, or omit for an **fzf picker**
-- Works from anywhere — even from inside a worktree
-
-### `flash out [--apply | --discard]`
-
-End the flash and go home.
-
-| Flag | Behavior |
-|------|----------|
-| `--apply` | Sync changes to the worktree directory |
-| `--discard` | Throw away changes |
-| _(neither)_ | Prompt: `[a]pply / [d]iscard` |
-
-Restores your original branch, pops the stash, deletes the temp branch, and cleans up the state file.
-
-### `flash apply`
-
-Sync current changes to the worktree **without ending the flash**. Useful for iterating:
-
-```
-flash into feature → test → fix → flash apply → test again → flash out
+```bash
+flash into my-worktree    # stash + checkout worktree branch
+# test, poke around, make fixes
+flash apply                # sync fixes back to worktree
+# test some more
+flash out                  # restore original branch + pop stash
 ```
 
-### `flash status`
+## Details
 
-Read-only. Shows current state or "Not flashed in." Safe to call anytime.
+**`flash into`** stashes uncommitted changes, creates a temp branch `flash/<branch>` at the worktree's HEAD, and checks it out. Pass a worktree name or branch, or omit for an **fzf picker**. Works from anywhere — even from inside a worktree.
+
+**`flash out`** restores your original branch, pops the stash, deletes the temp branch, and removes the state file. If you have uncommitted changes, it prompts: `[a]pply / [d]iscard` (non-interactive defaults to discard).
+
+**`flash apply`** syncs your current changes to the worktree directory without ending the flash. Useful for iterating: test → fix → apply → test again → flash out.
 
 ## How it works
 
-On `flash into`, a state file is written to `<repo>/.flash/state.json` (auto-excluded from git). It tracks:
+On `flash into`, a state file is written to `<repo>/.flash/state.json` (auto-excluded from git). It tracks your original branch, HEAD SHA, stash SHA, and worktree path. On `flash out`, everything is restored and `.flash/` is deleted.
 
-- Original branch and HEAD SHA
-- Stash SHA (looked up by SHA, not index — safe even if you stash other things)
-- Worktree path and branch
-
-On `flash out`, everything is restored and `.flash/` is deleted.
+Stashes are tracked by SHA (not index position), so they're safe even if you stash other things while flashed in.
 
 ## Safety
 
