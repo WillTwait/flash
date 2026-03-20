@@ -12,11 +12,14 @@ Your main checkout is where everything actually runs — dev server, database, p
 
 `flash` wraps that entire dance in a single command with a state file, so nothing gets lost.
 
+Inspired by [Conductor's Spotlight]([url](https://docs.conductor.build/guides/spotlight-testing)).
+
 ## Install
 
+First, clone the repo. Then,
+
 ```bash
-uv tool install flash-git            # from PyPI (soon)
-uv tool install ~/Developer/flash    # from local clone
+uv tool install ~/<path-to-flash>    # from local clone
 ```
 
 ## Commands
