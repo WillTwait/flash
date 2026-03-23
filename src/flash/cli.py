@@ -82,9 +82,11 @@ def _apply_to_worktree(state: FlashState, canonical_root: str) -> None:
             write_state(state)
 
         if has_uncommitted:
-            count = sync_changes("HEAD", canonical_root, state.worktree_path)
-            if count:
-                _ok(f"Synced {count} uncommitted file(s) to worktree.")
+            synced = sync_changes("HEAD", canonical_root, state.worktree_path)
+            if synced:
+                _ok(f"Synced {len(synced)} uncommitted file(s) to worktree:")
+                for f in synced:
+                    typer.echo(f"  {f}")
 
     except FlashError:
         if safety_sha:
@@ -175,9 +177,9 @@ def into(
         create_and_checkout_temp_branch(temp_branch, wt.head, cwd=canonical_root)
 
         # Copy uncommitted changes from worktree into canonical checkout
-        wt_changes = sync_changes("HEAD", wt.path, canonical_root)
-        if wt_changes:
-            _info(f"Copied {wt_changes} uncommitted file(s) from worktree.")
+        wt_synced = sync_changes("HEAD", wt.path, canonical_root)
+        if wt_synced:
+            _info(f"Copied {len(wt_synced)} uncommitted file(s) from worktree.")
 
         # Ensure .flash/ is excluded from git
         ensure_git_exclude(canonical_root)

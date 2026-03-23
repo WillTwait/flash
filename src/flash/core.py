@@ -275,7 +275,7 @@ def has_changes_against(ref: str, cwd: str | Path | None = None) -> bool:
     return bool(get_changed_files(ref, cwd=cwd))
 
 
-def sync_changes(ref: str, src_dir: str | Path, dst_dir: str | Path) -> int:
+def sync_changes(ref: str, src_dir: str | Path, dst_dir: str | Path) -> list[str]:
     """Copy changed files from src_dir to dst_dir.
 
     Compares src_dir's working tree against ref to find changed files,
@@ -283,7 +283,7 @@ def sync_changes(ref: str, src_dir: str | Path, dst_dir: str | Path) -> int:
     because it handles repeated applies correctly — the target always gets
     the current state of each changed file.
 
-    Returns the number of files synced.
+    Returns list of file paths synced.
     """
     import shutil
 
@@ -291,24 +291,21 @@ def sync_changes(ref: str, src_dir: str | Path, dst_dir: str | Path) -> int:
     dst = Path(dst_dir)
     changed = get_changed_files(ref, cwd=src_dir)
 
-    if not changed:
-        return 0
-
-    count = 0
+    synced: list[str] = []
     for filepath in changed:
         src_file = src / filepath
         dst_file = dst / filepath
 
-        if src_file.exists():
+        if src_file.is_file():
             dst_file.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(src_file), str(dst_file))
-            count += 1
-        elif dst_file.exists():
+            synced.append(filepath)
+        elif dst_file.is_file():
             # File was deleted in source
             dst_file.unlink()
-            count += 1
+            synced.append(filepath)
 
-    return count
+    return synced
 
 
 def get_commits_since(base_sha: str, cwd: str | Path | None = None) -> list[str]:
