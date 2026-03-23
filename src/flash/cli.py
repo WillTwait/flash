@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import typer
 
@@ -94,13 +95,34 @@ def _apply_to_worktree(state: FlashState, canonical_root: str) -> None:
         raise
 
 
+def _complete_worktree_name(incomplete: str) -> list[str]:
+    """Tab-completion for worktree names."""
+    try:
+        canonical_root = get_canonical_root()
+    except FlashError:
+        return []
+    worktrees = list_worktrees(cwd=canonical_root)
+    names = []
+    for wt in worktrees:
+        if wt.is_bare or wt.path == canonical_root:
+            continue
+        dir_name = Path(wt.path).name
+        if incomplete in dir_name:
+            names.append(dir_name)
+        elif incomplete in wt.branch:
+            names.append(wt.branch)
+    return names
+
+
 @app.command()
 def into(
     name: str | None = typer.Argument(
-        None, help="Worktree directory name or branch name"
+        None,
+        help="Worktree directory name or branch name",
+        autocompletion=_complete_worktree_name,
     ),
 ) -> None:
-    """Flash into a worktree branch on the canonical checkout."""
+    """Flash into a worktree branch on the canonical checkout. [magenta]\\[alias: i][/magenta]"""
     try:
         canonical_root = get_canonical_root()
     except FlashError as e:
@@ -190,7 +212,7 @@ def out(
         False, "--discard", help="Discard changes made during flash"
     ),
 ) -> None:
-    """End flash session and restore original state."""
+    """End flash session and restore original state. [magenta]\\[alias: o][/magenta]"""
     try:
         canonical_root = get_canonical_root()
     except FlashError as e:
@@ -271,7 +293,7 @@ def out(
 
 @app.command()
 def status() -> None:
-    """Show current flash state."""
+    """Show current flash state. [magenta]\\[alias: st][/magenta]"""
     try:
         canonical_root = get_canonical_root()
     except FlashError as e:
@@ -302,7 +324,7 @@ def status() -> None:
 
 @app.command("apply")
 def apply_changes() -> None:
-    """Push current changes to the worktree without ending the flash."""
+    """Push current changes to the worktree without ending the flash. [magenta]\\[alias: a][/magenta]"""
     try:
         canonical_root = get_canonical_root()
     except FlashError as e:
@@ -319,6 +341,13 @@ def apply_changes() -> None:
     except FlashError as e:
         _err(str(e))
         raise typer.Exit(1)
+
+
+# Hidden short aliases
+app.command("i", hidden=True)(into)
+app.command("o", hidden=True)(out)
+app.command("st", hidden=True)(status)
+app.command("a", hidden=True)(apply_changes)
 
 
 if __name__ == "__main__":

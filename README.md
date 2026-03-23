@@ -24,14 +24,14 @@ uv tool install ~/<path-to-flash>    # from local clone
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `flash into [name]` | Switch to a worktree's branch (or open fzf picker) |
-| `flash out` | End flash, restore original branch + stash |
-| `flash out --apply` | End flash, send changes to worktree first |
-| `flash out --discard` | End flash, throw away changes |
-| `flash apply` | Send changes to worktree without ending flash |
-| `flash status` | Show current flash state |
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `flash into [name]` | `flash i` | Switch to a worktree's branch (or open fzf picker) |
+| `flash out` | `flash o` | End flash, restore original branch + stash |
+| `flash out --apply` | | End flash, send changes to worktree first |
+| `flash out --discard` | | End flash, throw away changes |
+| `flash apply` | `flash a` | Send changes to worktree without ending flash |
+| `flash status` | `flash st` | Show current flash state |
 
 ## Workflow
 
