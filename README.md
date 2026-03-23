@@ -1,7 +1,7 @@
 <h1 align="center">⚡ flash</h1>
 
 <p align="center">
-  Preview worktree branches from your main checkout while safely stashing your working state.
+  Preview worktree branches from your main checkout while seamlessly stashing your working state.
 </p>
 
 <p align="center">
