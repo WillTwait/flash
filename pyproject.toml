@@ -1,15 +1,29 @@
 [project]
-name = "flash"
+name = "worktree-flash"
 version = "0.1.0"
-description = "Safely swap your main checkout to a worktree branch and back"
+description = "Preview worktree branches from your main checkout while safely stashing your working state."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Will Twait" }]
+keywords = ["git", "worktree", "cli", "stash"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = [
     "typer>=0.15.0",
 ]
 
 [project.scripts]
 flash = "flash.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/WillTwait/flash"
+Repository = "https://github.com/WillTwait/flash"
 
 [build-system]
 requires = ["hatchling"]

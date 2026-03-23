@@ -19,11 +19,17 @@ Inspired by [Conductor's Spotlight](https://docs.conductor.build/guides/spotligh
 ## Install
 
 ```bash
-git clone https://github.com/WillTwait/flash.git
-uv tool install ~/path/to/flash
+uv tool install worktree-flash        # or pipx install worktree-flash
 ```
 
-Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
+Or from source:
+
+```bash
+git clone https://github.com/WillTwait/flash.git
+uv tool install ./flash
+```
+
+Requires Python 3.10+.
 
 ## Commands
 
@@ -50,7 +56,7 @@ flash out                  # restore original branch, pop stash, clean up
 
 ## Details
 
-### `flash into` — switch your checkout to a worktree's branch
+`flash into` — switch your checkout to a worktree's branch
 
 1. Stash uncommitted changes (tracked by SHA)
 2. Create and checkout a temp branch at the worktree's HEAD
@@ -59,7 +65,7 @@ flash out                  # restore original branch, pop stash, clean up
 
 Pass a worktree name or branch, or omit for an fzf picker.
 
-### `flash apply` — send your changes back to the worktree
+`flash apply` — send your changes back to the worktree
 
 1. Back up the worktree's state via `git stash create`
 2. Clean the worktree for a conflict-free cherry-pick
@@ -68,13 +74,31 @@ Pass a worktree name or branch, or omit for an fzf picker.
 
 Safe to run multiple times. If anything fails, the backup stash SHA is printed for recovery.
 
-### `flash out` — restore your original branch
+`flash out` — restore your original branch
 
 1. Prompt `[a]pply / [d]iscard` if you have unsent changes
 2. Checkout your original branch
 3. Delete the temp branch
 4. Pop your stash by SHA
 5. Remove `.flash/` entirely
+
+## Usage with Claude Code
+
+Add this to your project's `CLAUDE.md` so Claude understands how to use flash:
+
+```markdown
+## Flash (worktree previewing)
+
+`flash` is installed and available for previewing worktree branches from the main checkout.
+
+- `flash into <name>` — switch to a worktree branch (stashes current work automatically)
+- `flash out --discard` — restore original branch (use `--apply` to send changes back to worktree)
+- `flash apply` — send commits + uncommitted changes to the worktree without ending the flash
+- `flash status` — check current flash state
+
+When you need to test or review code from a worktree, use `flash into` instead of manually
+checking out branches. Always `flash out` when done.
+```
 
 ## Safety
 
