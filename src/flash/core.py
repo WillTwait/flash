@@ -344,19 +344,26 @@ def cherry_pick_to_worktree(commits: list[str], worktree_path: str | Path) -> in
     return len(commits)
 
 
-def ensure_git_exclude(canonical_root: str | Path) -> None:
-    """Add .flash/ to .git/info/exclude if not already there."""
+def ensure_git_exclude(
+    canonical_root: str | Path, extra_entries: list[str] | None = None
+) -> None:
+    """Add .flash/ (and any extra patterns) to .git/info/exclude."""
     exclude_file = Path(canonical_root) / ".git" / "info" / "exclude"
     exclude_file.parent.mkdir(parents=True, exist_ok=True)
 
-    entry = ".flash/"
-    if exclude_file.exists():
-        content = exclude_file.read_text()
-        if entry in content:
-            return
-        if not content.endswith("\n"):
-            content += "\n"
-        content += entry + "\n"
+    entries = [".flash/"]
+    if extra_entries:
+        entries.extend(extra_entries)
+
+    content = exclude_file.read_text() if exclude_file.exists() else ""
+
+    added = False
+    for entry in entries:
+        if entry not in content:
+            if content and not content.endswith("\n"):
+                content += "\n"
+            content += entry + "\n"
+            added = True
+
+    if added:
         exclude_file.write_text(content)
-    else:
-        exclude_file.write_text(entry + "\n")
