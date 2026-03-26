@@ -345,11 +345,39 @@ def apply_changes() -> None:
         raise typer.Exit(1)
 
 
+@app.command("sync")
+def sync_from_worktree() -> None:
+    """Pull uncommitted worktree changes into the canonical checkout."""
+    try:
+        canonical_root = get_canonical_root()
+    except FlashError as e:
+        _err(str(e))
+        raise typer.Exit(1)
+
+    state = read_state(canonical_root)
+    if state is None:
+        _err("Not currently flashed in.")
+        raise typer.Exit(1)
+
+    try:
+        synced = sync_changes("HEAD", state.worktree_path, canonical_root)
+        if not synced:
+            _info("No changes to sync from worktree.")
+            raise typer.Exit(0)
+
+        _ok(f"Synced {len(synced)} file(s) from {state.worktree_path}")
+
+    except FlashError as e:
+        _err(str(e))
+        raise typer.Exit(1)
+
+
 # Hidden short aliases
 app.command("i", hidden=True)(into)
 app.command("o", hidden=True)(out)
 app.command("st", hidden=True)(status)
 app.command("a", hidden=True)(apply_changes)
+app.command("s", hidden=True)(sync_from_worktree)
 
 
 if __name__ == "__main__":
