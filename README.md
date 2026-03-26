@@ -40,6 +40,7 @@ Requires Python 3.10+.
 | `flash out --apply`   |            | End flash, send changes to worktree first          |
 | `flash out --discard` |            | End flash, throw away changes                      |
 | `flash apply`         | `flash a`  | Send changes to worktree without ending flash      |
+| `flash sync`          | `flash s`  | Pull worktree changes into canonical checkout      |
 | `flash status`        | `flash st` | Show current flash state                           |
 
 ## Typical workflow
@@ -49,6 +50,7 @@ Requires Python 3.10+.
 ```bash
 flash into my-worktree    # stash, checkout worktree branch
 # run server, test, poke around, fix things, commit
+flash sync                 # pull latest worktree changes into canonical checkout
 flash apply                # cherry-pick commits + sync files back to worktree
 # keep testing
 flash out                  # restore original branch, pop stash, clean up
@@ -74,6 +76,13 @@ Pass a worktree name or branch, or omit for an fzf picker.
 
 Safe to run multiple times. If anything fails, the backup stash SHA is printed for recovery.
 
+`flash sync` — pull worktree changes into the canonical checkout
+
+1. Diff uncommitted changes in the worktree against HEAD
+2. Copy changed files into the canonical checkout
+
+Useful when you've made changes directly in the worktree (e.g. from another tool or editor) and want them reflected in your canonical checkout.
+
 `flash out` — restore your original branch
 
 1. Prompt `[a]pply / [d]iscard` if you have unsent changes
@@ -94,6 +103,7 @@ Add this to your project's `CLAUDE.md` so Claude understands how to use flash:
 - `flash into <name>` — switch to a worktree branch (stashes current work automatically)
 - `flash out --discard` — restore original branch (use `--apply` to send changes back to worktree)
 - `flash apply` — send commits + uncommitted changes to the worktree without ending the flash
+- `flash sync` — pull worktree changes into the canonical checkout
 - `flash status` — check current flash state
 
 When you need to test or review code from a worktree, use `flash into` instead of manually

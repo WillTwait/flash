@@ -347,7 +347,7 @@ def apply_changes() -> None:
 
 @app.command("sync")
 def sync_from_worktree() -> None:
-    """Pull uncommitted worktree changes into the canonical checkout."""
+    """Pull uncommitted worktree changes into the canonical checkout. [magenta]\\[alias: s][/magenta]"""
     try:
         canonical_root = get_canonical_root()
     except FlashError as e:
