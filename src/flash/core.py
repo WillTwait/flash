@@ -313,6 +313,40 @@ def sync_changes_to_dir(
     return count
 
 
+def sync_changes_from_dir(worktree_dir: str | Path, canonical_root: str | Path) -> int:
+    """Copy changed files from a worktree directory into the canonical checkout.
+
+    Detects uncommitted changes in the worktree (vs its HEAD), then copies
+    each changed file into the canonical checkout. Handles deletions too.
+
+    Returns the number of files synced.
+    """
+    import shutil
+
+    worktree = Path(worktree_dir)
+    canonical = Path(canonical_root)
+    changed = get_changed_files("HEAD", cwd=worktree_dir)
+
+    if not changed:
+        return 0
+
+    count = 0
+    for filepath in changed:
+        src = worktree / filepath
+        dst = canonical / filepath
+
+        if src.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(src), str(dst))
+            count += 1
+        elif dst.exists():
+            # File was deleted in worktree
+            dst.unlink()
+            count += 1
+
+    return count
+
+
 def ensure_git_exclude(canonical_root: str | Path) -> None:
     """Add .flash/ to .git/info/exclude if not already there."""
     exclude_file = Path(canonical_root) / ".git" / "info" / "exclude"

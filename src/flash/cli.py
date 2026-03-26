@@ -22,6 +22,7 @@ from flash.core import (
     pop_stash_by_sha,
     resolve_worktree,
     stash_changes,
+    sync_changes_from_dir,
     sync_changes_to_dir,
 )
 from flash.state import FlashState, clear_state, now_iso, read_state, write_state
@@ -268,6 +269,33 @@ def apply_changes() -> None:
             raise typer.Exit(0)
 
         _ok(f"Synced {count} file(s) to {state.worktree_path}")
+
+    except FlashError as e:
+        _err(str(e))
+        raise typer.Exit(1)
+
+
+@app.command("sync")
+def sync_changes() -> None:
+    """Pull uncommitted worktree changes into the canonical checkout."""
+    try:
+        canonical_root = get_canonical_root()
+    except FlashError as e:
+        _err(str(e))
+        raise typer.Exit(1)
+
+    state = read_state(canonical_root)
+    if state is None:
+        _err("Not currently flashed in.")
+        raise typer.Exit(1)
+
+    try:
+        count = sync_changes_from_dir(state.worktree_path, canonical_root)
+        if not count:
+            _info("No changes to sync from worktree.")
+            raise typer.Exit(0)
+
+        _ok(f"Synced {count} file(s) from {state.worktree_path}")
 
     except FlashError as e:
         _err(str(e))
