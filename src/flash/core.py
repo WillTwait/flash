@@ -152,19 +152,43 @@ def resolve_worktree(name: str, cwd: str | Path | None = None) -> Worktree | Non
     return None
 
 
-def fzf_pick_worktree(canonical_root: str) -> Worktree | None:
-    """Use fzf to interactively pick a worktree."""
+def create_worktree(branch: str, cwd: str | Path | None = None) -> Worktree:
+    """Create a new branch and worktree as a sibling directory.
+
+    Returns the new Worktree.
+    """
+    cwd = cwd or str(Path.cwd())
+    worktree_path = str(Path(cwd).parent / branch)
+
+    if Path(worktree_path).exists():
+        raise FlashError(f"Directory already exists: {worktree_path}")
+
+    # Create branch and worktree in one step
+    run_git("worktree", "add", "-b", branch, worktree_path, cwd=cwd)
+
+    return Worktree(
+        path=worktree_path,
+        branch=branch,
+        head=get_head_sha(cwd=worktree_path),
+    )
+
+
+_NEW_WORKTREE_SENTINEL = "__new__"
+
+
+def fzf_pick_worktree(canonical_root: str) -> Worktree | str | None:
+    """Use fzf to interactively pick a worktree.
+
+    Returns a Worktree, the _NEW_WORKTREE_SENTINEL string, or None if cancelled.
+    """
     worktrees = list_worktrees(cwd=canonical_root)
     # Filter out bare and the canonical root itself
     candidates = [
         wt for wt in worktrees if not wt.is_bare and wt.path != canonical_root
     ]
 
-    if not candidates:
-        return None
-
     # Format for fzf: "dir_name  (branch)  path"
-    lines = []
+    lines = [f"+ New worktree\t\t{_NEW_WORKTREE_SENTINEL}"]
     for wt in candidates:
         dir_name = Path(wt.path).name
         lines.append(f"{dir_name}\t{wt.branch}\t{wt.path}")
@@ -197,6 +221,9 @@ def fzf_pick_worktree(canonical_root: str) -> Worktree | None:
 
     parts = selected.split("\t")
     selected_path = parts[2] if len(parts) >= 3 else parts[0]
+
+    if selected_path == _NEW_WORKTREE_SENTINEL:
+        return _NEW_WORKTREE_SENTINEL
 
     for wt in candidates:
         if wt.path == selected_path:

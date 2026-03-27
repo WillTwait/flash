@@ -10,10 +10,12 @@ import typer
 
 from flash.core import (
     FlashError,
+    _NEW_WORKTREE_SENTINEL,
     checkout_branch,
     cherry_pick_to_worktree,
     clean_working_tree,
     create_and_checkout_temp_branch,
+    create_worktree,
     delete_branch,
     ensure_git_exclude,
     fzf_pick_worktree,
@@ -46,7 +48,7 @@ def _version_callback(value: bool) -> None:
 
 def _main_callback(
     version: bool = typer.Option(
-        False, "--version", "-V", callback=_version_callback, is_eager=True,
+        False, "--version", "-v", callback=_version_callback, is_eager=True,
         help="Show version and exit.",
     ),
 ) -> None:
@@ -171,6 +173,9 @@ def into(
         help="Worktree directory name or branch name",
         autocompletion=_complete_worktree_name,
     ),
+    new: bool = typer.Option(
+        False, "--new", "-n", help="Create a new worktree and flash into it"
+    ),
 ) -> None:
     """Flash into a worktree branch on the canonical checkout. [magenta]\\[alias: i][/magenta]"""
     try:
@@ -185,12 +190,36 @@ def into(
         _err(f"Already flashed into '{existing.flash_branch}'. Run 'flash out' first.")
         raise typer.Exit(1)
 
-    # Resolve the target worktree
-    if name is None:
-        wt = fzf_pick_worktree(canonical_root)
-        if wt is None:
+    # Create new worktree
+    if new:
+        if name is None:
+            _err("Worktree name required with --new.")
+            raise typer.Exit(1)
+        try:
+            _info(f"Creating worktree '{name}'...")
+            wt = create_worktree(name, cwd=canonical_root)
+        except FlashError as e:
+            _err(str(e))
+            raise typer.Exit(1)
+    # Resolve existing worktree
+    elif name is None:
+        result = fzf_pick_worktree(canonical_root)
+        if result is None:
             _err("No worktree selected.")
             raise typer.Exit(1)
+        if result == _NEW_WORKTREE_SENTINEL:
+            branch_name = typer.prompt("Worktree name")
+            if not branch_name.strip():
+                _err("Worktree name cannot be empty.")
+                raise typer.Exit(1)
+            try:
+                _info(f"Creating worktree '{branch_name}'...")
+                wt = create_worktree(branch_name.strip(), cwd=canonical_root)
+            except FlashError as e:
+                _err(str(e))
+                raise typer.Exit(1)
+        else:
+            wt = result
     else:
         wt = resolve_worktree(name, cwd=canonical_root)
         if wt is None:
