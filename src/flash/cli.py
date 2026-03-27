@@ -20,6 +20,7 @@ from flash.core import (
     get_canonical_root,
     get_commits_since,
     get_current_branch,
+    get_diverged_files,
     get_head_sha,
     is_dirty,
     list_worktrees,
@@ -361,12 +362,13 @@ def status() -> None:
         typer.echo(f"Stash SHA: {state.stash_sha}")
     typer.echo()
 
-    # Outgoing: commits + uncommitted
+    # Outgoing: commits + diverged uncommitted files
     commits = get_commits_since(state.flash_base_sha, cwd=canonical_root)
-    local_status = run_git("status", "--porcelain", cwd=canonical_root)
-    local_files = [l for l in local_status.stdout.strip().splitlines() if l]
+    unapplied_files, unsynced_files = get_diverged_files(
+        canonical_root, state.worktree_path
+    )
 
-    if commits or local_files:
+    if commits or unapplied_files:
         _info("Unapplied (flash apply):")
         if commits:
             log_result = run_git(
@@ -377,17 +379,13 @@ def status() -> None:
             typer.echo(f"  {len(commits)} commit(s):")
             for line in log_result.stdout.strip().splitlines():
                 typer.echo(f"    {line}")
-        if local_files:
-            typer.echo(f"  {len(local_files)} file(s)")
+        if unapplied_files:
+            typer.echo(f"  {len(unapplied_files)} file(s)")
     else:
         typer.echo("No unapplied changes.")
 
-    # Unsynced: worktree state
-    wt_status = run_git("status", "--porcelain", cwd=state.worktree_path)
-    wt_files = [l for l in wt_status.stdout.strip().splitlines() if l]
-
-    if wt_files:
-        _info(f"Unsynced (flash sync): {len(wt_files)} file(s) in worktree")
+    if unsynced_files:
+        _info(f"Unsynced (flash sync): {len(unsynced_files)} file(s) in worktree")
     else:
         typer.echo("No unsynced changes.")
 
@@ -474,6 +472,11 @@ def diff_changes(
     color = f"--color={'always' if sys.stdout.isatty() else 'never'}"
     has_output = False
 
+    # Get files that actually differ between canonical and worktree
+    unapplied_files, unsynced_files = get_diverged_files(
+        canonical_root, state.worktree_path
+    )
+
     # --- Unapplied (what flash apply would send) ---
     if show_unapplied:
         # Commits
@@ -482,22 +485,20 @@ def diff_changes(
             f"{state.flash_base_sha}..HEAD",
             cwd=canonical_root,
         )
-        # File diff
-        diff_args = ["diff", color, "HEAD"]
-        if not verbose:
-            diff_args.append("--stat")
-        diff_result = run_git(*diff_args, cwd=canonical_root)
-        # Untracked
-        untracked = run_git(
-            "ls-files", "--others", "--exclude-standard",
-            cwd=canonical_root,
-        )
-
         has_commits = bool(log_result.stdout.strip())
-        has_diff = bool(diff_result.stdout.strip())
-        has_untracked = bool(untracked.stdout.strip())
 
-        if has_commits or has_diff or has_untracked:
+        # File diff — only for files that actually diverge
+        diff_output = ""
+        if unapplied_files:
+            diff_args = ["diff", color, "HEAD"]
+            if not verbose:
+                diff_args.append("--stat")
+            diff_args.append("--")
+            diff_args.extend(unapplied_files)
+            diff_result = run_git(*diff_args, cwd=canonical_root)
+            diff_output = diff_result.stdout.strip()
+
+        if has_commits or diff_output or unapplied_files:
             has_output = True
             _info("Unapplied (flash apply):")
             if has_commits:
@@ -505,39 +506,29 @@ def diff_changes(
                 typer.echo(f"{count} commit(s):")
                 for line in log_result.stdout.strip().splitlines():
                     typer.echo(f"  {line}")
-                if has_diff or has_untracked:
+                if diff_output:
                     typer.echo()
-            if has_diff:
-                typer.echo(diff_result.stdout, nl=False)
-            if has_untracked:
-                typer.echo("Untracked files:")
-                for f in untracked.stdout.strip().splitlines():
-                    typer.echo(f"  {f}")
+            if diff_output:
+                typer.echo(diff_output)
             typer.echo()
 
     # --- Unsynced (what flash sync would pull) ---
     if show_unsynced:
-        diff_args = ["diff", color, "HEAD"]
-        if not verbose:
-            diff_args.append("--stat")
-        wt_result = run_git(*diff_args, cwd=state.worktree_path)
-        wt_untracked = run_git(
-            "ls-files", "--others", "--exclude-standard",
-            cwd=state.worktree_path,
-        )
+        diff_output = ""
+        if unsynced_files:
+            diff_args = ["diff", color, "HEAD"]
+            if not verbose:
+                diff_args.append("--stat")
+            diff_args.append("--")
+            diff_args.extend(unsynced_files)
+            wt_result = run_git(*diff_args, cwd=state.worktree_path)
+            diff_output = wt_result.stdout.strip()
 
-        has_wt_diff = bool(wt_result.stdout.strip())
-        has_wt_untracked = bool(wt_untracked.stdout.strip())
-
-        if has_wt_diff or has_wt_untracked:
+        if diff_output or unsynced_files:
             has_output = True
             _info("Unsynced (flash sync):")
-            if has_wt_diff:
-                typer.echo(wt_result.stdout, nl=False)
-            if has_wt_untracked:
-                typer.echo("Untracked files in worktree:")
-                for f in wt_untracked.stdout.strip().splitlines():
-                    typer.echo(f"  {f}")
+            if diff_output:
+                typer.echo(diff_output)
 
     if not has_output:
         _info("No changes.")

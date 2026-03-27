@@ -263,16 +263,65 @@ def delete_branch(branch: str, cwd: str | Path | None = None) -> None:
 
 
 def get_changed_files(ref: str, cwd: str | Path | None = None) -> list[str]:
-    """Get list of files changed between ref and working tree, including untracked."""
-    run_git("add", "-A", cwd=cwd)
+    """Get list of files changed between ref and working tree, including untracked.
+
+    Fully read-only — does not mutate the index or working tree.
+    """
+    files: set[str] = set()
+
+    # Unstaged tracked changes (modified + deleted) vs ref
+    result = run_git("diff", "--name-only", ref, cwd=cwd)
+    files.update(f.strip() for f in result.stdout.splitlines() if f.strip())
+
+    # Staged changes vs ref
     result = run_git("diff", "--cached", "--name-only", ref, cwd=cwd)
-    run_git("reset", "HEAD", cwd=cwd, check=False)
-    return [f for f in result.stdout.strip().splitlines() if f.strip()]
+    files.update(f.strip() for f in result.stdout.splitlines() if f.strip())
+
+    # Untracked files
+    result = run_git("ls-files", "--others", "--exclude-standard", cwd=cwd)
+    files.update(f.strip() for f in result.stdout.splitlines() if f.strip())
+
+    return sorted(files)
 
 
 def has_changes_against(ref: str, cwd: str | Path | None = None) -> bool:
     """Check if there are any changes between ref and working tree."""
     return bool(get_changed_files(ref, cwd=cwd))
+
+
+def get_diverged_files(dir_a: str | Path, dir_b: str | Path) -> tuple[list[str], list[str]]:
+    """Compare uncommitted changes between two checkouts on the same branch.
+
+    Returns (only_in_a, only_in_b): files that are dirty in one side
+    but either clean or different in the other. Files that are dirty
+    in both sides with identical content are excluded.
+    """
+    import filecmp
+
+    a, b = Path(dir_a), Path(dir_b)
+    dirty_a = set(get_changed_files("HEAD", cwd=dir_a))
+    dirty_b = set(get_changed_files("HEAD", cwd=dir_b))
+
+    only_a: list[str] = []
+    only_b: list[str] = []
+
+    all_files = dirty_a | dirty_b
+    for f in sorted(all_files):
+        fa, fb = a / f, b / f
+        a_exists, b_exists = fa.is_file(), fb.is_file()
+
+        if not a_exists and not b_exists:
+            continue  # both deleted — identical state
+
+        if a_exists and b_exists and filecmp.cmp(str(fa), str(fb), shallow=False):
+            continue  # identical on both sides — not diverged
+
+        if f in dirty_a:
+            only_a.append(f)
+        if f in dirty_b:
+            only_b.append(f)
+
+    return only_a, only_b
 
 
 def sync_changes(ref: str, src_dir: str | Path, dst_dir: str | Path) -> list[str]:
