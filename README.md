@@ -54,6 +54,7 @@ Requires Python 3.10+.
 | `flash diff`          | `flash d`  | Show unapplied and unsynced changes                |
 | `flash diff -v`       |            | Show full diff                                     |
 | `flash status`        | `flash st` | Show current flash state                           |
+| `flash update`        | `flash u`  | Check for a newer version                          |
 
 ## Typical workflow
 
