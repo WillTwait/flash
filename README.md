@@ -46,6 +46,7 @@ Requires Python 3.10+.
 | Command               | Alias      | Description                                        |
 | --------------------- | ---------- | -------------------------------------------------- |
 | `flash into [name]`   | `flash i`  | Switch to a worktree's branch (or open fzf picker) |
+| `flash into -n name`  |            | Create a new worktree and flash into it            |
 | `flash out`           | `flash o`  | End flash, restore original branch + stash         |
 | `flash out --apply`   |            | End flash, send changes to worktree first          |
 | `flash out --discard` |            | End flash, throw away changes                      |
