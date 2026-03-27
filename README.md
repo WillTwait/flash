@@ -29,6 +29,16 @@ git clone https://github.com/WillTwait/flash.git
 uv tool install ./flash
 ```
 
+For development (changes reflected immediately):
+
+```bash
+git clone https://github.com/WillTwait/flash.git
+cd flash
+uv run flash              # runs from source, no install step
+```
+
+Add a shell alias for convenience: `alias flash="uv run --project ~/path/to/flash flash"`
+
 Requires Python 3.10+.
 
 ## Commands
@@ -41,6 +51,8 @@ Requires Python 3.10+.
 | `flash out --discard` |            | End flash, throw away changes                      |
 | `flash apply`         | `flash a`  | Send changes to worktree without ending flash      |
 | `flash sync`          | `flash s`  | Pull worktree changes into canonical checkout      |
+| `flash diff`          | `flash d`  | Show unapplied and unsynced changes                |
+| `flash diff -v`       |            | Show full diff                                     |
 | `flash status`        | `flash st` | Show current flash state                           |
 
 ## Typical workflow
@@ -51,8 +63,11 @@ Requires Python 3.10+.
 flash into my-worktree    # stash, checkout worktree branch
 # run server, test, poke around, fix things, commit
 flash sync                 # pull latest worktree changes into canonical checkout
+flash diff                 # see unapplied + unsynced changes
 flash apply                # cherry-pick commits + sync files back to worktree
 # keep testing
+flash diff -v              # full diff of all changes
+flash diff --incoming      # only show unsynced worktree changes
 flash out                  # restore original branch, pop stash, clean up
 ```
 
@@ -83,9 +98,15 @@ Safe to run multiple times. If anything fails, the backup stash SHA is printed f
 
 Useful when you've made changes directly in the worktree (e.g. from another tool or editor) and want them reflected in your canonical checkout.
 
+`flash diff` — show unapplied and unsynced changes
+
+1. Shows both directions: unapplied (what `apply` would send) and unsynced (what `sync` would pull)
+2. Defaults to a diffstat summary; use `--verbose`/`-v` for the full diff
+3. Use `--incoming`/`-i` to show only unsynced worktree changes
+
 `flash out` — restore your original branch
 
-1. Prompt `[a]pply / [d]iscard` if you have unsent changes
+1. Prompt `[a]pply / [d]iscard` if you have unapplied changes (shows diffstat)
 2. Checkout your original branch
 3. Delete the temp branch
 4. Pop your stash by SHA
@@ -102,9 +123,10 @@ Add this to your project's `CLAUDE.md` so Claude understands how to use flash:
 
 - `flash into <name>` — switch to a worktree branch (stashes current work automatically)
 - `flash out --discard` — restore original branch (use `--apply` to send changes back to worktree)
-- `flash apply` — send commits + uncommitted changes to the worktree without ending the flash
-- `flash sync` — pull worktree changes into the canonical checkout
-- `flash status` — check current flash state
+- `flash apply` — send unapplied changes to the worktree without ending the flash
+- `flash sync` — pull unsynced worktree changes into the canonical checkout
+- `flash diff` — show unapplied and unsynced changes (`-v` for full diff, `--incoming` for worktree only)
+- `flash status` — check current flash state (shows unapplied/unsynced summary)
 
 When you need to test or review code from a worktree, use `flash into` instead of manually
 checking out branches. Always `flash out` when done.

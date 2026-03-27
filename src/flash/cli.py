@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -19,11 +20,13 @@ from flash.core import (
     get_canonical_root,
     get_commits_since,
     get_current_branch,
+    get_diverged_files,
     get_head_sha,
     is_dirty,
     list_worktrees,
     pop_stash_by_sha,
     resolve_worktree,
+    run_git,
     stash_changes,
     stash_create,
     sync_changes,
@@ -46,6 +49,30 @@ def _ok(msg: str) -> None:
 
 def _info(msg: str) -> None:
     typer.secho(msg, fg=typer.colors.YELLOW)
+
+
+def _human_duration(iso_str: str) -> str:
+    """Convert ISO timestamp to a human-readable duration like '2h 15m'."""
+    try:
+        started = datetime.fromisoformat(iso_str)
+        now = datetime.now(timezone.utc)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        seconds = int((now - started).total_seconds())
+        if seconds < 60:
+            return f"{seconds}s"
+        minutes = seconds // 60
+        if minutes < 60:
+            return f"{minutes}m"
+        hours = minutes // 60
+        mins = minutes % 60
+        if hours < 24:
+            return f"{hours}h {mins}m" if mins else f"{hours}h"
+        days = hours // 24
+        hrs = hours % 24
+        return f"{days}d {hrs}h" if hrs else f"{days}d"
+    except (ValueError, TypeError):
+        return ""
 
 
 def _apply_to_worktree(state: FlashState, canonical_root: str) -> None:
@@ -181,8 +208,14 @@ def into(
         if wt_synced:
             _info(f"Copied {len(wt_synced)} uncommitted file(s) from worktree.")
 
-        # Ensure .flash/ is excluded from git
-        ensure_git_exclude(canonical_root)
+        # Ensure .flash/ and worktree dir (if inside repo) are excluded from git
+        extra_excludes = []
+        try:
+            wt_rel = str(Path(wt.path).relative_to(canonical_root))
+            extra_excludes.append(wt_rel + "/")
+        except ValueError:
+            pass  # worktree is outside canonical root
+        ensure_git_exclude(canonical_root, extra_excludes)
 
         # Write state — flash_base_sha is the worktree's HEAD (temp branch start)
         state = FlashState(
@@ -240,11 +273,23 @@ def out(
             if not apply and not discard:
                 # Interactive: prompt user
                 if sys.stdin.isatty():
-                    _info("You have changes during this flash.")
+                    _info("You have unapplied changes:")
                     if commits:
-                        _info(f"  {len(commits)} commit(s)")
+                        log_result = run_git(
+                            "log", "--oneline",
+                            f"{state.flash_base_sha}..HEAD",
+                            cwd=canonical_root,
+                        )
+                        typer.echo(f"  {len(commits)} commit(s):")
+                        for line in log_result.stdout.strip().splitlines():
+                            typer.echo(f"    {line}")
                     if has_unstaged:
-                        _info("  Uncommitted file changes")
+                        diff_stat = run_git(
+                            "diff", "--stat", "HEAD",
+                            cwd=canonical_root,
+                        )
+                        if diff_stat.stdout.strip():
+                            typer.echo(diff_stat.stdout, nl=False)
                     choice = (
                         typer.prompt(
                             "[a]pply to worktree / [d]iscard",
@@ -307,21 +352,42 @@ def status() -> None:
         typer.echo("Not flashed in.")
         raise typer.Exit(0)
 
-    typer.echo(f"Flashed into: {state.flash_branch}")
+    # Header with duration
+    duration = _human_duration(state.started_at)
+    duration_str = f" ({duration} ago)" if duration else ""
+    typer.echo(f"Flashed into: {state.flash_branch}{duration_str}")
     typer.echo(f"Original branch: {state.original_branch}")
-    typer.echo(f"Temp branch: {state.temp_branch}")
     typer.echo(f"Worktree: {state.worktree_path}")
-    typer.echo(f"Started: {state.started_at}")
     if state.stash_sha:
         typer.echo(f"Stash SHA: {state.stash_sha}")
+    typer.echo()
 
-    # Show if there are current changes
+    # Outgoing: commits + diverged uncommitted files
     commits = get_commits_since(state.flash_base_sha, cwd=canonical_root)
-    has_unstaged = is_dirty(cwd=canonical_root)
-    if commits:
-        _info(f"{len(commits)} new commit(s) since flash.")
-    if has_unstaged:
-        _info("Uncommitted file changes.")
+    unapplied_files, unsynced_files = get_diverged_files(
+        canonical_root, state.worktree_path
+    )
+
+    if commits or unapplied_files:
+        _info("Unapplied (flash apply):")
+        if commits:
+            log_result = run_git(
+                "log", "--oneline",
+                f"{state.flash_base_sha}..HEAD",
+                cwd=canonical_root,
+            )
+            typer.echo(f"  {len(commits)} commit(s):")
+            for line in log_result.stdout.strip().splitlines():
+                typer.echo(f"    {line}")
+        if unapplied_files:
+            typer.echo(f"  {len(unapplied_files)} file(s)")
+    else:
+        typer.echo("No unapplied changes.")
+
+    if unsynced_files:
+        _info(f"Unsynced (flash sync): {len(unsynced_files)} file(s) in worktree")
+    else:
+        typer.echo("No unsynced changes.")
 
 
 @app.command("apply")
@@ -372,12 +438,109 @@ def sync_from_worktree() -> None:
         raise typer.Exit(1)
 
 
+@app.command("diff")
+def diff_changes(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show full diff instead of diffstat summary"
+    ),
+    incoming: bool = typer.Option(
+        False, "--incoming", "-i", help="Only show unsynced worktree changes"
+    ),
+    outgoing: bool = typer.Option(
+        False, "--outgoing", "-o", help="Only show unapplied local changes"
+    ),
+) -> None:
+    """Show unapplied and unsynced changes. [magenta]\\[alias: d][/magenta]"""
+    try:
+        canonical_root = get_canonical_root()
+    except FlashError as e:
+        _err(str(e))
+        raise typer.Exit(1)
+
+    state = read_state(canonical_root)
+    if state is None:
+        _err("Not currently flashed in.")
+        raise typer.Exit(1)
+
+    if incoming and outgoing:
+        _err("Cannot use both --incoming and --outgoing.")
+        raise typer.Exit(1)
+
+    show_unapplied = not incoming  # show unless --incoming
+    show_unsynced = not outgoing   # show unless --outgoing
+
+    color = f"--color={'always' if sys.stdout.isatty() else 'never'}"
+    has_output = False
+
+    # Get files that actually differ between canonical and worktree
+    unapplied_files, unsynced_files = get_diverged_files(
+        canonical_root, state.worktree_path
+    )
+
+    # --- Unapplied (what flash apply would send) ---
+    if show_unapplied:
+        # Commits
+        log_result = run_git(
+            "log", "--oneline", color,
+            f"{state.flash_base_sha}..HEAD",
+            cwd=canonical_root,
+        )
+        has_commits = bool(log_result.stdout.strip())
+
+        # File diff — only for files that actually diverge
+        diff_output = ""
+        if unapplied_files:
+            diff_args = ["diff", color, "HEAD"]
+            if not verbose:
+                diff_args.append("--stat")
+            diff_args.append("--")
+            diff_args.extend(unapplied_files)
+            diff_result = run_git(*diff_args, cwd=canonical_root)
+            diff_output = diff_result.stdout.strip()
+
+        if has_commits or diff_output or unapplied_files:
+            has_output = True
+            _info("Unapplied (flash apply):")
+            if has_commits:
+                count = len(log_result.stdout.strip().splitlines())
+                typer.echo(f"{count} commit(s):")
+                for line in log_result.stdout.strip().splitlines():
+                    typer.echo(f"  {line}")
+                if diff_output:
+                    typer.echo()
+            if diff_output:
+                typer.echo(diff_output)
+            typer.echo()
+
+    # --- Unsynced (what flash sync would pull) ---
+    if show_unsynced:
+        diff_output = ""
+        if unsynced_files:
+            diff_args = ["diff", color, "HEAD"]
+            if not verbose:
+                diff_args.append("--stat")
+            diff_args.append("--")
+            diff_args.extend(unsynced_files)
+            wt_result = run_git(*diff_args, cwd=state.worktree_path)
+            diff_output = wt_result.stdout.strip()
+
+        if diff_output or unsynced_files:
+            has_output = True
+            _info("Unsynced (flash sync):")
+            if diff_output:
+                typer.echo(diff_output)
+
+    if not has_output:
+        _info("No changes.")
+
+
 # Hidden short aliases
 app.command("i", hidden=True)(into)
 app.command("o", hidden=True)(out)
 app.command("st", hidden=True)(status)
 app.command("a", hidden=True)(apply_changes)
 app.command("s", hidden=True)(sync_from_worktree)
+app.command("d", hidden=True)(diff_changes)
 
 
 if __name__ == "__main__":

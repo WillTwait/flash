@@ -1,6 +1,6 @@
 [project]
 name = "worktree-flash"
-version = "0.1.0"
+version = "0.2.0"
 description = "Preview worktree branches from your main checkout while safely stashing your working state."
 readme = "README.md"
 requires-python = ">=3.10"
