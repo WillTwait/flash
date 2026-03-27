@@ -48,7 +48,7 @@ def _version_callback(value: bool) -> None:
 
 def _main_callback(
     version: bool = typer.Option(
-        False, "--version", "-V", callback=_version_callback, is_eager=True,
+        False, "--version", "-v", callback=_version_callback, is_eager=True,
         help="Show version and exit.",
     ),
 ) -> None:
