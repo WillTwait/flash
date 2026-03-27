@@ -33,9 +33,30 @@ from flash.core import (
 )
 from flash.state import FlashState, clear_state, now_iso, read_state, write_state
 
+from importlib.metadata import version as pkg_version
+
+__version__ = pkg_version("worktree-flash")
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"flash {__version__}")
+        raise typer.Exit()
+
+
+def _main_callback(
+    version: bool = typer.Option(
+        False, "--version", "-V", callback=_version_callback, is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    pass
+
+
 app = typer.Typer(
     help="Safely swap your main checkout to a worktree branch and back.",
     no_args_is_help=True,
+    callback=_main_callback,
 )
 
 
@@ -534,6 +555,38 @@ def diff_changes(
         _info("No changes.")
 
 
+@app.command("update")
+def check_update() -> None:
+    """Check for a newer version of flash. [magenta]\\[alias: u][/magenta]"""
+    import json
+    import urllib.request
+
+    _info(f"Current version: {__version__}")
+
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/repos/WillTwait/flash/releases/latest",
+            headers={"Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        latest = data["tag_name"].lstrip("v")
+    except Exception:
+        _err("Could not check for updates.")
+        raise typer.Exit(1)
+
+    if latest == __version__:
+        _ok("You're on the latest version.")
+        return
+
+    _info(f"Latest version:  {latest}")
+    typer.echo()
+    typer.echo("Upgrade with:")
+    typer.echo("  pipx upgrade worktree-flash")
+    typer.echo("  uv tool upgrade worktree-flash")
+    typer.echo("  # or git pull if running from source")
+
+
 # Hidden short aliases
 app.command("i", hidden=True)(into)
 app.command("o", hidden=True)(out)
@@ -541,6 +594,7 @@ app.command("st", hidden=True)(status)
 app.command("a", hidden=True)(apply_changes)
 app.command("s", hidden=True)(sync_from_worktree)
 app.command("d", hidden=True)(diff_changes)
+app.command("u", hidden=True)(check_update)
 
 
 if __name__ == "__main__":
