@@ -52,6 +52,7 @@ Requires Python 3.10+.
 | `flash apply`         | `flash a`  | Send changes to worktree without ending flash      |
 | `flash sync`          | `flash s`  | Pull worktree changes into canonical checkout      |
 | `flash diff`          | `flash d`  | Show unapplied and unsynced changes                |
+| `flash diff -v`       |            | Show full diff                                     |
 | `flash status`        | `flash st` | Show current flash state                           |
 
 ## Typical workflow
@@ -62,7 +63,7 @@ Requires Python 3.10+.
 flash into my-worktree    # stash, checkout worktree branch
 # run server, test, poke around, fix things, commit
 flash sync                 # pull latest worktree changes into canonical checkout
-flash diff                 # see unapplied + unsynced changes (diffstat)
+flash diff                 # see unapplied + unsynced changes
 flash apply                # cherry-pick commits + sync files back to worktree
 # keep testing
 flash diff -v              # full diff of all changes
