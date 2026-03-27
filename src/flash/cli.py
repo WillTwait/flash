@@ -557,7 +557,7 @@ def diff_changes(
 
 @app.command("update")
 def check_update() -> None:
-    """Check for a newer version of flash."""
+    """Check for a newer version of flash. [magenta]\\[alias: u][/magenta]"""
     import json
     import urllib.request
 
@@ -594,6 +594,7 @@ app.command("st", hidden=True)(status)
 app.command("a", hidden=True)(apply_changes)
 app.command("s", hidden=True)(sync_from_worktree)
 app.command("d", hidden=True)(diff_changes)
+app.command("u", hidden=True)(check_update)
 
 
 if __name__ == "__main__":
