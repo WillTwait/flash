@@ -193,7 +193,7 @@ def into(
     # Create new worktree
     if new:
         if name is None:
-            _err("Branch name required with --new.")
+            _err("Worktree name required with --new.")
             raise typer.Exit(1)
         try:
             _info(f"Creating worktree '{name}'...")
@@ -208,9 +208,9 @@ def into(
             _err("No worktree selected.")
             raise typer.Exit(1)
         if result == _NEW_WORKTREE_SENTINEL:
-            branch_name = typer.prompt("Branch name")
+            branch_name = typer.prompt("Worktree name")
             if not branch_name.strip():
-                _err("Branch name cannot be empty.")
+                _err("Worktree name cannot be empty.")
                 raise typer.Exit(1)
             try:
                 _info(f"Creating worktree '{branch_name}'...")
